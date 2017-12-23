@@ -1,0 +1,91 @@
+sudo: required  # workaround to prevent running out of memory
+
+language: android
+
+env:
+  global:
+    - FIRST_EMULATOR_API_LEVEL=10
+    - SECOND_EMULATOR_API_LEVEL=21
+    # switch glibc to a memory conserving mode
+    - MALLOC_ARENA_MAX=2
+    # wait 5 minutes for adb to connect to emulator. Travis-ci cancels a
+    # stalled build after 10 minutes, so this should be shorter than that so
+    # there is time for the build to report the error.
+    - ADB_INSTALL_TIMEOUT=5
+
+jdk:
+  - oraclejdk8
+
+#
+before_cache:
+  - rm -f $HOME/.gradle/caches/modules-2/modules-2.lock
+cache:
+  directories:
+    - $HOME/.gradle/caches/
+    - $HOME/.gradle/wrapper/
+
+android:
+  components:
+    - tools
+    - platform-tools
+    - build-tools-23.0.3
+    - build-tools-24.0.1
+    - extra-android-m2repository
+    - android-23
+    - android-24
+    - android-$FIRST_EMULATOR_API_LEVEL
+    - sys-img-armeabi-v7a-android-$FIRST_EMULATOR_API_LEVEL
+    - android-$SECOND_EMULATOR_API_LEVEL
+    - sys-img-armeabi-v7a-android-$SECOND_EMULATOR_API_LEVEL
+  licenses:
+    # only approve the non-Google licenses
+    - 'android-sdk-preview-license-52d11cd2'
+    - 'android-sdk-license-.+'
+
+script:
+  # run release build script
+  - ./make-release-build
+  - for f in libnetcipher/netcipher-*.*; do sha256sum $f; done
+  # clean up to start the gradle build from fresh git
+  - git clean -fdx
+  - git reset --hard
+  # print lint errors/warnings to build log
+  - sed -i 's,\s*textReport .*,\ttextReport true,g' */build.gradle
+  # 'assemble' everything and run all checks that do not require a device/emulator
+  - ./gradlew build -PdisablePreDex
+  # test release process
+  - ./gradlew jarRelease -PdisablePreDex
+  - for f in *netcipher*/build/libs/netcipher*.*; do sha256sum $f; done
+  # start the emulator after the build to conserve memory
+  - echo no | android create avd --force -n test -t android-$FIRST_EMULATOR_API_LEVEL
+  - emulator -avd test -no-skin -no-audio -no-window &
+  - android-wait-for-emulator
+  - adb shell input keyevent 82 &
+  # now run the tests that require a device/emulator
+  - ./gradlew connectedCheck -PdisablePreDex
+  - echo "get the full logcat here:";
+  - adb -e logcat -d | curl --silent -F 'clbin=<-' https://clbin.com;
+
+  # kill any running emulator
+  - ps -ef | grep '[e]mulator'
+  - kill `ps -ef | grep '[e]mulator' | awk {'print$2'}`
+
+  # now run the second emulator
+  - echo no | android create avd --force -n test -t android-$SECOND_EMULATOR_API_LEVEL
+  - emulator -avd test -no-skin -no-audio -no-window &
+  - android-wait-for-emulator
+  - adb shell input keyevent 82 &
+  # install Orbot to test against
+  - curl --silent https://guardianproject.info/fdroid/repo/Orbot-v15.1.2.apk > orbot.apk
+  - adb -e install -r orbot.apk
+  # temp workaround: start Orbot manually, it has a bug that is preventing auto-start
+  - adb shell am broadcast -a org.torproject.android.intent.action.START -n org.torproject.android/.service.StartTorReceiver
+  - sleep 5
+  # now run the tests that require a device/emulator
+  - ./gradlew connectedCheck -PdisablePreDex
+
+after_failure:
+  - find * -name lint-results.xml | xargs cat
+  - adb -e logcat -d '*:E';
+  - echo "get the full logcat here:";
+  - adb -e logcat -d | curl --silent -F 'clbin=<-' https://clbin.com;

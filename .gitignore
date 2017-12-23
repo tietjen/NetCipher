@@ -14,9 +14,23 @@ bin/
 gen/
 
 # eclipse
-.settings
-.project
-.classpath
+.settings/
 
 # Local configuration file (sdk path, etc)
 local.properties
+
+# Gradle
+build/
+.gradle/
+
+# Mac OS X
+.DS_Store
+
+# IntelliJ / Android Studio
+*iml
+
+# release jars
+libnetcipher/netcipher-*.jar*
+
+# Android Studio
+.idea/

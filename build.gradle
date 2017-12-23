@@ -1,0 +1,41 @@
+
+def stdout = new ByteArrayOutputStream()
+exec {
+    commandLine 'git', 'describe', '--tags', '--always'
+    standardOutput = stdout
+}
+def versionName = stdout.toString().trim()
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:2.0+'
+    }
+}
+
+allprojects {
+    repositories {
+        jcenter()
+    }
+
+    setVersion versionName
+    setGroup 'info.guardianproject.netcipher'
+}
+
+/**
+ * Improve build server performance by allowing disabling of pre-dexing
+ * (see http://tools.android.com/tech-docs/new-build-system/tips#TOC-Improving-Build-Server-performance.)
+ */
+project.ext.preDexLibs = !project.hasProperty('disablePreDex')
+
+subprojects {
+    project.plugins.whenPluginAdded { plugin ->
+        if ("com.android.build.gradle.AppPlugin".equals(plugin.class.name)) {
+            project.android.dexOptions.preDexLibraries = rootProject.ext.preDexLibs
+        } else if ("com.android.build.gradle.LibraryPlugin".equals(plugin.class.name)) {
+            project.android.dexOptions.preDexLibraries = rootProject.ext.preDexLibs
+        }
+    }
+}

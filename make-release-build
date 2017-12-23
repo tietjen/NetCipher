@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set -e
+set -x
+
+# standardize timezone to reduce build differences
+export TZ=UTC
+
+git reset --hard
+git clean -fdx
+
+./setup-ant
+cd libnetcipher
+ant release-all
+
+if which gpg > /dev/null; then
+    if [ -z "`gpg --list-secret-keys`" ]; then
+        echo "No GPG secret keys found, not signing APK"
+    else
+        jarname=netcipher-$(git describe)
+        rm -f ${jarname}*.asc
+        for f in ${jarname}*.*; do
+            gpg --armor --detach-sign $f
+        done
+    fi
+else
+    echo "gpg not found, not signing APK"
+fi
